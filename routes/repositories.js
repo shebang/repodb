@@ -1,18 +1,31 @@
 import express from 'express';
-import { Octokit } from '@octokit/rest'; // Named import from Octokit
-import { promises as fs } from 'fs';
 import path from 'path';
+import loki from 'lokijs';
+import os from 'os';
 
-const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN, // Use an environment variable for the GitHub token
+// Define the repository path and the LokiJS database path
+const xdgDataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+const dbPath = path.join(xdgDataHome, 'repodb', 'repositories.db');
+
+// Initialize the LokiJS database (without autosave, since we're just reading data)
+const db = new loki(dbPath, {
+  persistenceMethod: 'fs', // Use file system persistence to load data
 });
 
 const router = express.Router();
 
-// Fix the REPO_PATH to handle the home directory correctly
-const REPODB_REPOSITORIES_ROOT = path.resolve(
-  process.env.REPODB_REPOSITORIES_ROOT || path.join(os.homedir(), 'dev/repos/github.com')
-);
+// Function to load the database
+function loadDatabase() {
+  return new Promise((resolve, reject) => {
+    db.loadDatabase({}, (err) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(db);
+      }
+    });
+  });
+}
 
 /**
  * @swagger
@@ -47,62 +60,36 @@ router.get('/', async (req, res) => {
   const { lang, topic } = req.query;
 
   try {
-    // Step 1: Get the list of owners (directories under REPO_PATH)
-    const owners = await fs.readdir(REPODB_REPOSITORIES_ROOT, { withFileTypes: true });
+    // Step 1: Load the LokiJS database
+    await loadDatabase();
 
-    const filteredRepos = [];
+    // Step 2: Get the 'repositories' collection
+    const repos = db.getCollection('repositories');
 
-    // Step 2: Loop through owners and their repositories
-    for (const ownerDir of owners) {
-      if (ownerDir.isDirectory()) {
-        const ownerPath = path.join(REPODB_REPOSITORIES_ROOT, ownerDir.name);
-        const repos = await fs.readdir(ownerPath, { withFileTypes: true });
-
-        for (const repoDir of repos) {
-          if (repoDir.isDirectory()) {
-            const repo = repoDir.name;
-            const owner = ownerDir.name;
-
-            try {
-              // Fetch repository metadata from GitHub API
-              const { data } = await octokit.repos.get({
-                owner: owner,
-                repo: repo,
-              });
-
-              console.log(data)
-              // Filter by language or topic
-              if (
-                (lang && data.language === lang) ||
-                (topic && data.topics.includes(topic))
-              ) {
-                filteredRepos.push({
-                  owner,
-                  repo: data.name,
-                  description: data.description,
-                  language: data.language,
-                  stars: data.stargazers_count,
-                  forks: data.forks_count,
-                  open_issues: data.open_issues_count,
-                  topics: data.topics,
-                });
-              }
-
-            } catch (error) {
-              console.warn(`Failed to fetch metadata for ${owner}/${repo}: ${error.message}`);
-            }
-          }
-        }
-      }
+    if (!repos) {
+      return res.status(500).json({ error: 'Repositories collection not found in the database' });
     }
 
-    // Step 3: Return the filtered list of repositories
+    // Step 3: Query the repositories from the database
+    let filteredRepos = repos.find(); // Get all repositories initially
+
+    // Apply filters for language or topic
+    if (lang) {
+      filteredRepos = filteredRepos.filter(repo => repo.language && repo.language.toLowerCase() === lang.toLowerCase());
+    }
+
+    if (topic) {
+      filteredRepos = filteredRepos.filter(repo => repo.topics && repo.topics.includes(topic.toLowerCase()));
+    }
+
+    // Step 4: Return the filtered list of repositories
     res.json(filteredRepos);
 
   } catch (error) {
-    console.error(`Error reading repositories: ${error.message}`);
-    res.status(500).json({ error: 'Failed to list repositories' });
+    console.error(`Error querying repositories: ${error.message}`);
+    res.status(500).json({ error: 'Failed to query repositories' });
   }
-}); export default router;
+});
 
+export default router;
 
