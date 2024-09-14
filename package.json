@@ -25,6 +25,7 @@
   "dependencies": {
     "@octokit/rest": "^19.0.7",
     "express": "^4.21.0",
+    "lokijs": "^1.5.12",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1"
   },

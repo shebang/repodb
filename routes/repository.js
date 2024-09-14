@@ -1,11 +1,12 @@
 
-const express = require('express');
-const { Octokit } = require('@octokit/rest');
-const router = express.Router();
+import express from 'express';
+import { Octokit } from '@octokit/rest'; // Named import from Octokit
 
 const octokit = new Octokit({
   auth: process.env.GITHUB_TOKEN, // Use an environment variable for the GitHub token
 });
+
+const router = express.Router();
 
 /**
  * @swagger
@@ -63,11 +64,11 @@ router.get('/:owner/:repo', async (req, res) => {
     const metadata = {
       name: data.name,
       description: data.description,
-      language: data.language,
-      stars: data.stargazers_count,
-      forks: data.forks_count,
-      open_issues: data.open_issues_count,
-      topics: data.topics,
+      // language: data.language,
+      // stars: data.stargazers_count,
+      // forks: data.forks_count,
+      // open_issues: data.open_issues_count,
+      // topics: data.topics,
     };
 
     res.json(metadata);
@@ -77,4 +78,5 @@ router.get('/:owner/:repo', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
+
